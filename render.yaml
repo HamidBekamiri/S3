@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: s4-frontend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      # Existing backend origin only; do not include /api-s4 and do not add a trailing slash.
+      - key: BACKEND_ORIGIN
+        sync: false
+      # This is intentionally a same-origin path handled by Nginx.
+      - key: VITE_API_BASE
+        value: /api-s4
+      # Google OAuth client IDs are public identifiers, but supply yours in Render instead of Git.
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false

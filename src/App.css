@@ -1,0 +1,146 @@
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+/* Outlier Carousel */
+.outlier-carousel-container {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.outlier-carousel {
+  display: flex;
+  overflow-x: auto;
+  gap: 1rem;
+  padding: 1rem 0.5rem;
+  scroll-behavior: smooth;
+  width: 100%;
+  /* Hide scrollbar for cleaner look, but allow scrolling */
+  scrollbar-width: thin;
+}
+
+.outlier-carousel::-webkit-scrollbar {
+  height: 6px;
+}
+
+.outlier-carousel::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.outlier-card {
+  flex: 0 0 300px; /* Fixed width for cards */
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 1rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.outlier-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.outlier-card h4 {
+  font-size: 1rem;
+  margin: 0 0 0.5rem 0;
+  line-height: 1.4;
+  /* Limit title lines */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: #333;
+}
+
+.outlier-card .meta {
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+
+.outlier-card .stats {
+  margin-top: auto; /* Push to bottom */
+  padding-top: 0.5rem;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+.outlier-card .actions {
+  margin-top: 1rem;
+}
+
+.nav-button {
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid #ccc;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.nav-button:hover:not(:disabled) {
+  background: white;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.nav-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
