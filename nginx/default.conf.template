@@ -8,7 +8,7 @@ server {
 
     # Keep API requests same-origin in the browser and forward them to the existing backend.
     # BACKEND_ORIGIN must be only the origin, for example: https://api.example.com
-    location /api-s4/ {
+    location /api/ {
         proxy_pass ${BACKEND_ORIGIN};
         proxy_http_version 1.1;
         proxy_ssl_server_name on;
