@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 import {
   BarChart,
   Bar,
@@ -32,7 +33,7 @@ import KnowledgeTree from "./KnowledgeTree"; // Added import
 // Google Auth removed
 
 import ScopusInstructions from './ScopusInstructions';
-import { AuthProvider, useAuth } from './AuthContext';
+import { AuthProvider, useAuth, type User } from './AuthContext';
 import AdminDashboard from './AdminDashboard';
 import CommunityPapersModal from './CommunityPapersModal';
 import { ContentAnalysisModal } from './ContentAnalysisModal';
@@ -1833,49 +1834,167 @@ const TagCloud: React.FC<{ terms: { term: string; weight: number }[] }> = ({
 };
 
 
-const AuthScreen: React.FC<{ onLogin: (user: any) => void }> = ({ onLogin }) => {
+interface AuthScreenProps {
+  googleAuthEnabled: boolean;
+  onLogin: (user: User) => void;
+}
+
+const AuthScreen: React.FC<AuthScreenProps> = ({ googleAuthEnabled, onLogin }) => {
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot' | 'resend'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
+
+  const extractUser = (data: unknown): User => {
+    const candidate = (data as { user?: User })?.user ?? data;
+    const user = candidate as Partial<User>;
+
+    if (!user || typeof user.email !== 'string') {
+      throw new Error('The authentication server returned an invalid user response.');
+    }
+
+    return {
+      id: typeof user.id === 'number' ? user.id : 0,
+      email: user.email,
+      name: typeof user.name === 'string' && user.name ? user.name : user.email,
+      picture: typeof user.picture === 'string' ? user.picture : '',
+      role: typeof user.role === 'string' && user.role ? user.role : 'user',
+    };
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setIsSubmitting(true);
+
     try {
-      let res;
       if (mode === 'login') {
-        res = await axios.post(`${API_BASE}/auth/login`, { email, password });
-        onLogin(res.data);
+        const response = await axios.post(`${API_BASE}/auth/login`, { email, password });
+        onLogin(extractUser(response.data));
       } else if (mode === 'signup') {
         await axios.post(`${API_BASE}/auth/signup`, { email, password, name });
-        alert("Registration successful! Please check your email/console for the verification link to activate your account.");
+        alert('Registration successful! Please check your email for the verification link to activate your account.');
         setMode('login');
       } else if (mode === 'resend') {
         await axios.post(`${API_BASE}/auth/resend-activation`, { email });
-        alert("If the account exists and is inactive, a new activation link has been sent.");
+        alert('If the account exists and is inactive, a new activation link has been sent.');
         setMode('login');
       } else {
         await axios.post(`${API_BASE}/auth/forgot-password`, { email });
-        alert("If an account exists, a reset link has been sent.");
+        alert('If an account exists, a reset link has been sent.');
         setMode('login');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setError(err.response?.data?.detail || "An error occurred");
+      if (axios.isAxiosError(err)) {
+        setError(
+          err.response?.data?.detail ||
+          err.response?.data?.message ||
+          'Authentication failed. Please try again.'
+        );
+      } else {
+        setError(err instanceof Error ? err.message : 'Authentication failed. Please try again.');
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  return (
-    <div className="app" style={{ justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-      <div className="card" style={{ textAlign: 'center', padding: '3rem', maxWidth: '400px', width: '100%' }}>
-        <div style={{ marginBottom: '1rem', fontWeight: 'bold', color: '#555' }}>
-          {mode === 'login' ? 'Welcome Back' : mode === 'signup' ? 'Create Account' : mode === 'resend' ? 'Resend Activation' : 'Reset Password'}
-        </div>
-        <h1 style={{ marginBottom: '2rem' }}>S3 Application</h1>
+  const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
+    const credential = credentialResponse.credential;
+    if (!credential) {
+      setError('Google did not return a valid sign-in credential.');
+      return;
+    }
 
-        {error && <div className="message error" style={{ marginBottom: '1rem' }}>{error}</div>}
+    setError(null);
+    setIsGoogleSubmitting(true);
+
+    try {
+      const response = await axios.post(`${API_BASE}/auth/google`, { credential });
+      onLogin(extractUser(response.data));
+    } catch (err: unknown) {
+      console.error(err);
+      if (axios.isAxiosError(err)) {
+        const status = err.response?.status;
+        const serverMessage = err.response?.data?.detail || err.response?.data?.message;
+        setError(
+          serverMessage ||
+          (status === 404
+            ? 'Google sign-in is not enabled on the backend yet. Add POST /auth/google to the backend.'
+            : 'Google sign-in failed. Please try again.')
+        );
+      } else {
+        setError(err instanceof Error ? err.message : 'Google sign-in failed. Please try again.');
+      }
+    } finally {
+      setIsGoogleSubmitting(false);
+    }
+  };
+
+  const heading =
+    mode === 'login'
+      ? 'Welcome Back'
+      : mode === 'signup'
+        ? 'Create Account'
+        : mode === 'resend'
+          ? 'Resend Activation'
+          : 'Reset Password';
+
+  return (
+    <div className="app" style={{ justifyContent: 'center', alignItems: 'center', minHeight: '100vh', padding: '1rem' }}>
+      <div className="card" style={{ textAlign: 'center', padding: '3rem', maxWidth: '420px', width: '100%' }}>
+        <div style={{ marginBottom: '1rem', fontWeight: 'bold', color: '#555' }}>
+          {heading}
+        </div>
+        <h1 style={{ marginBottom: '2rem' }}>S3 Bibliometric</h1>
+
+        {error && (
+          <div className="message error" role="alert" style={{ marginBottom: '1rem' }}>
+            {error}
+          </div>
+        )}
+
+        {mode === 'login' && googleAuthEnabled && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'center', minHeight: '44px' }}>
+              {isGoogleSubmitting ? (
+                <button className="secondary-button" type="button" disabled style={{ width: '100%' }}>
+                  Signing in with Google…
+                </button>
+              ) : (
+                <GoogleLogin
+                  onSuccess={handleGoogleSuccess}
+                  onError={() => setError('Google sign-in was cancelled or could not be completed.')}
+                  text="continue_with"
+                  shape="rectangular"
+                  size="large"
+                  width="356"
+                  useOneTap={false}
+                />
+              )}
+            </div>
+
+            <div
+              aria-hidden="true"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                margin: '1.5rem 0',
+                color: '#777',
+                fontSize: '0.85rem',
+              }}
+            >
+              <span style={{ height: 1, background: '#ddd', flex: 1 }} />
+              <span>or use email</span>
+              <span style={{ height: 1, background: '#ddd', flex: 1 }} />
+            </div>
+          </>
+        )}
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {mode === 'signup' && (
@@ -1883,56 +2002,74 @@ const AuthScreen: React.FC<{ onLogin: (user: any) => void }> = ({ onLogin }) => 
               type="text"
               placeholder="Full Name"
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={(e) => setName(e.target.value)}
               required
+              autoComplete="name"
               className="field-input"
               style={{ width: '100%' }}
             />
           )}
 
           <input
-            type="text"
-            placeholder="Email or Username"
+            type={mode === 'login' ? 'text' : 'email'}
+            placeholder={mode === 'login' ? 'Email or Username' : 'Email'}
             value={email}
-            onChange={e => setEmail(e.target.value)}
+            onChange={(e) => setEmail(e.target.value)}
             required
+            autoComplete={mode === 'login' ? 'username' : 'email'}
             className="field-input"
             style={{ width: '100%' }}
           />
 
-          {(mode !== 'forgot' && mode !== 'resend') && (
+          {mode !== 'forgot' && mode !== 'resend' && (
             <input
               type="password"
               placeholder="Password"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               required
+              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
               className="field-input"
               style={{ width: '100%' }}
             />
           )}
 
-          <button type="submit" className="primary-button" style={{ width: '100%' }}>
-            {mode === 'login' ? 'Login' : mode === 'signup' ? 'Sign Up' : mode === 'resend' ? 'Resend Link' : 'Send Reset Link'}
+          <button
+            type="submit"
+            className="primary-button"
+            disabled={isSubmitting || isGoogleSubmitting}
+            style={{ width: '100%' }}
+          >
+            {isSubmitting
+              ? 'Please wait…'
+              : mode === 'login'
+                ? 'Login'
+                : mode === 'signup'
+                  ? 'Sign Up'
+                  : mode === 'resend'
+                    ? 'Resend Link'
+                    : 'Send Reset Link'}
           </button>
         </form>
+
+        {mode === 'login' && !googleAuthEnabled && (
+          <div style={{ marginTop: '1rem', color: '#777', fontSize: '0.8rem' }}>
+            Google sign-in will appear after VITE_GOOGLE_CLIENT_ID is configured in Render.
+          </div>
+        )}
 
         <div style={{ marginTop: '1.5rem', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           {mode === 'login' && (
             <>
-              <a href="#" className="link" onClick={(e) => { e.preventDefault(); setMode('signup') }}>Create an account</a>
-              <a href="#" className="link" onClick={(e) => { e.preventDefault(); setMode('forgot') }}>Forgot password?</a>
-              <a href="#" className="link" onClick={(e) => { e.preventDefault(); setMode('resend') }}>Resend Activation Email</a>
+              <a href="#" className="link" onClick={(e) => { e.preventDefault(); setError(null); setMode('signup'); }}>Create an account</a>
+              <a href="#" className="link" onClick={(e) => { e.preventDefault(); setError(null); setMode('forgot'); }}>Forgot password?</a>
+              <a href="#" className="link" onClick={(e) => { e.preventDefault(); setError(null); setMode('resend'); }}>Resend Activation Email</a>
             </>
           )}
-          {mode === 'signup' && (
-            <a href="#" className="link" onClick={(e) => { e.preventDefault(); setMode('login') }}>Already have an account? Login</a>
-          )}
-          {mode === 'forgot' && (
-            <a href="#" className="link" onClick={(e) => { e.preventDefault(); setMode('login') }}>Back to Login</a>
-          )}
-          {mode === 'resend' && (
-            <a href="#" className="link" onClick={(e) => { e.preventDefault(); setMode('login') }}>Back to Login</a>
+          {mode !== 'login' && (
+            <a href="#" className="link" onClick={(e) => { e.preventDefault(); setError(null); setMode('login'); }}>
+              Back to Login
+            </a>
           )}
         </div>
       </div>
@@ -1940,7 +2077,7 @@ const AuthScreen: React.FC<{ onLogin: (user: any) => void }> = ({ onLogin }) => 
   );
 };
 
-const MainContent: React.FC = () => {
+const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabled }) => {
   const { user, setUser, logout } = useAuth();
   const [showAdmin, setShowAdmin] = useState(false);
   const [showScopusPage, setShowScopusPage] = useState(false);
@@ -2373,7 +2510,7 @@ const MainContent: React.FC = () => {
   };
 
   if (!user) {
-    return <AuthScreen onLogin={setUser} />;
+    return <AuthScreen googleAuthEnabled={googleAuthEnabled} onLogin={setUser} />;
   }
 
   if (showScopusPage) {
@@ -4034,11 +4171,11 @@ const MainContent: React.FC = () => {
   );
 };
 
-const App: React.FC = () => {
+const App: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabled }) => {
   return (
     <AuthProvider>
       <ErrorBoundary>
-        <MainContent />
+        <MainContent googleAuthEnabled={googleAuthEnabled} />
       </ErrorBoundary>
     </AuthProvider>
   );

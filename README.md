@@ -71,3 +71,7 @@ export default defineConfig([
   },
 ])
 ```
+
+## Google account sign-in
+
+The frontend includes a conditional Google OAuth provider and a **Continue with Google** button. Configure `VITE_GOOGLE_CLIENT_ID` in Render and implement `POST /api-s4/auth/google` on the backend. See [GOOGLE_AUTH_SETUP.md](./GOOGLE_AUTH_SETUP.md) for the complete request and response contract.
