@@ -17,7 +17,7 @@ services:
       # The browser calls the API through the frontend Nginx proxy.
       # This value is compiled into the Vite frontend during the Docker build.
       - key: VITE_API_BASE
-        value: /api
+        value: /api-s4
 
       # Enter the backend's public origin in the Render dashboard.
       #
