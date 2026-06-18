@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { googleLogout } from '@react-oauth/google';
+import { clearAccessToken, getAccessToken } from './authToken';
 
 export interface User {
     id: number;
@@ -26,6 +27,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.setItem('user', JSON.stringify(newUser));
         } else {
             localStorage.removeItem('user');
+            clearAccessToken();
         }
     };
 
@@ -37,11 +39,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         const storedUser = localStorage.getItem('user');
         if (storedUser) {
+            if (!getAccessToken()) {
+                // A user profile without the backend JWT is not an authenticated session.
+                localStorage.removeItem('user');
+                return;
+            }
             try {
                 setUserState(JSON.parse(storedUser));
             } catch (e) {
                 console.error("Failed to parse stored user", e);
                 localStorage.removeItem('user');
+                clearAccessToken();
             }
         }
     }, []);

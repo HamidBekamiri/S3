@@ -1,4 +1,5 @@
 // src/api.ts
+import { withAuthHeaders } from './authToken';
 export const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
 async function handleResponse<T>(res: Response): Promise<T> {
@@ -24,14 +25,16 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: withAuthHeaders(),
+  });
   return handleResponse<T>(res);
 }
 
 export async function apiPost<T>(path: string, body?: any): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: withAuthHeaders(body ? { "Content-Type": "application/json" } : undefined),
     body: body ? JSON.stringify(body) : undefined,
   });
   return handleResponse<T>(res);
@@ -592,6 +595,7 @@ async function startUploadCsvJob(
 
   const res = await fetch(`${API_BASE}/upload-csv/start`, {
     method: "POST",
+    headers: withAuthHeaders(),
     body: formData,
   });
 
@@ -601,7 +605,9 @@ async function startUploadCsvJob(
 async function fetchUploadCsvJobStatus(
   jobId: string
 ): Promise<UploadJobStatus> {
-  const res = await fetch(`${API_BASE}/upload-csv/progress/${jobId}`);
+  const res = await fetch(`${API_BASE}/upload-csv/progress/${jobId}`, {
+    headers: withAuthHeaders(),
+  });
   return handleResponse<UploadJobStatus>(res);
 }
 

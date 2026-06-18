@@ -40,6 +40,7 @@ import { ContentAnalysisModal } from './ContentAnalysisModal';
 import PDFManagerModal from './PDFManagerModal';
 import SubcommunityDendrogram from './SubcommunityDendrogram';
 import axios from 'axios';
+import { setAccessToken } from './authToken';
 
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
@@ -1865,6 +1866,16 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ googleAuthEnabled, onLogin }) =
     };
   };
 
+  const completeLogin = (data: unknown) => {
+    const token = (data as { access_token?: unknown })?.access_token;
+    if (typeof token !== 'string' || !token) {
+      throw new Error('The authentication server did not return an access token.');
+    }
+
+    setAccessToken(token);
+    onLogin(extractUser(data));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -1873,7 +1884,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ googleAuthEnabled, onLogin }) =
     try {
       if (mode === 'login') {
         const response = await axios.post(`${API_BASE}/auth/login`, { email, password });
-        onLogin(extractUser(response.data));
+        completeLogin(response.data);
       } else if (mode === 'signup') {
         await axios.post(`${API_BASE}/auth/signup`, { email, password, name });
         alert('Registration successful! Please check your email for the verification link to activate your account.');
@@ -1915,7 +1926,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ googleAuthEnabled, onLogin }) =
 
     try {
       const response = await axios.post(`${API_BASE}/auth/google`, { credential });
-      onLogin(extractUser(response.data));
+      completeLogin(response.data);
     } catch (err: unknown) {
       console.error(err);
       if (axios.isAxiosError(err)) {

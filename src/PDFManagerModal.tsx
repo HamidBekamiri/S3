@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE } from './api';
+import { withAuthHeaders } from './authToken';
 
 interface PaperStatus {
     id: number;
@@ -28,7 +29,7 @@ const PDFManagerModal: React.FC<PDFManagerModalProps> = ({ jobId, isOpen, onClos
     const loadStatus = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${API_BASE}/pdf-status/${jobId}`);
+            const res = await fetch(`${API_BASE}/pdf-status/${jobId}`, { headers: withAuthHeaders() });
             if (!res.ok) throw new Error("Failed to load status");
             const data = await res.json();
             setPapers(data.papers);
@@ -72,7 +73,7 @@ const PDFManagerModal: React.FC<PDFManagerModalProps> = ({ jobId, isOpen, onClos
         try {
             const res = await fetch(`${API_BASE}/fetch-pdfs/${jobId}`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: withAuthHeaders({ "Content-Type": "application/json" }),
                 body: JSON.stringify({ paper_ids: Array.from(selectedIds) })
             });
             const data = await res.json();
@@ -99,6 +100,7 @@ const PDFManagerModal: React.FC<PDFManagerModalProps> = ({ jobId, isOpen, onClos
         try {
             const res = await fetch(`${API_BASE}/upload-pdf/${jobId}/${paperId}`, {
                 method: 'POST',
+                headers: withAuthHeaders(),
                 body: formData
             });
             if (res.ok) {

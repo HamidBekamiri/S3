@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE } from './api';
+import { withAuthHeaders } from './authToken';
 
 interface Paper {
     id: number;
@@ -62,7 +63,7 @@ const CommunityPapersModal: React.FC<CommunityPapersModalProps> = ({
 
     const loadPdfStatus = async () => {
         try {
-            const res = await fetch(`${API_BASE}/pdf-status/${jobId}`);
+            const res = await fetch(`${API_BASE}/pdf-status/${jobId}`, { headers: withAuthHeaders() });
             if (res.ok) {
                 const data = await res.json();
                 const statusMap: Record<number, boolean> = {};
@@ -97,7 +98,7 @@ const CommunityPapersModal: React.FC<CommunityPapersModalProps> = ({
         try {
             const res = await fetch(`${API_BASE}/fetch-pdfs/${jobId}`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: withAuthHeaders({ "Content-Type": "application/json" }),
                 body: JSON.stringify({ paper_ids: Array.from(selectedIds) })
             });
             const data = await res.json();
@@ -118,6 +119,7 @@ const CommunityPapersModal: React.FC<CommunityPapersModalProps> = ({
         try {
             const res = await fetch(`${API_BASE}/upload-pdf/${jobId}/${paperId}`, {
                 method: 'POST',
+                headers: withAuthHeaders(),
                 body: formData
             });
             if (res.ok) {
