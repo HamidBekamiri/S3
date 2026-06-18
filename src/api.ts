@@ -5,16 +5,19 @@ async function handleResponse<T>(res: Response): Promise<T> {
   const text = await res.text();
   let data: any = {};
   if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      // non-JSON
-    }
+    try { data = JSON.parse(text); } catch { /* non-JSON body */ }
   }
 
   if (!res.ok) {
-    const message = data?.detail || data?.message || res.statusText;
-    throw new Error(message);
+    const detail = data && typeof data === "object"
+      ? (data.detail || data.message)
+      : undefined;
+    // statusText is "" on HTTP/2, so never rely on it alone.
+    const message = detail
+      ? String(detail)
+      : `HTTP ${res.status}${res.statusText ? " " + res.statusText : ""} from ${res.url}` +
+        (text ? ` – ${text.slice(0, 200)}` : " (empty body)");
+    throw Object.assign(new Error(message), { status: res.status, url: res.url });
   }
 
   return data as T;
