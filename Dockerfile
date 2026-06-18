@@ -12,7 +12,7 @@ COPY . .
 # Render exposes service environment variables as Docker build arguments.
 # Vite variables are compiled into the browser bundle, so they must not be secrets.
 ARG VITE_GOOGLE_CLIENT_ID
-ARG VITE_API_BASE=/api-s4
+ARG VITE_API_BASE=/api
 ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 ENV VITE_API_BASE=$VITE_API_BASE
 
