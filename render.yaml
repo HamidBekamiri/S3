@@ -1,4 +1,3 @@
-```yaml
 services:
   - type: web
     name: s3-bibliometric
@@ -37,4 +36,3 @@ services:
       # 123456789-example.apps.googleusercontent.com
       - key: VITE_GOOGLE_CLIENT_ID
         sync: false
-```
