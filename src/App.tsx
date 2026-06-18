@@ -1920,12 +1920,30 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ googleAuthEnabled, onLogin }) =
       console.error(err);
       if (axios.isAxiosError(err)) {
         const status = err.response?.status;
-        const serverMessage = err.response?.data?.detail || err.response?.data?.message;
+        const responseData = err.response?.data;
+        const serverMessage =
+          responseData && typeof responseData === 'object'
+            ? (responseData as { detail?: string; message?: string }).detail ||
+              (responseData as { detail?: string; message?: string }).message
+            : undefined;
+
+        if (!err.response) {
+          setError(
+            `Cannot reach the authentication server at ${API_BASE}. ` +
+            'Check the frontend BACKEND_ORIGIN/proxy configuration and whether the backend is running.'
+          );
+          return;
+        }
+
         setError(
           serverMessage ||
           (status === 404
-            ? 'Google sign-in is not enabled on the backend yet. Add POST /auth/google to the backend.'
-            : 'Google sign-in failed. Please try again.')
+            ? 'Google sign-in is not enabled on the deployed backend. Deploy POST /api/auth/google.'
+            : status === 502 || status === 503 || status === 504
+              ? `The authentication proxy/backend is unavailable (HTTP ${status}). Check BACKEND_ORIGIN and backend logs.`
+              : status && status >= 500
+                ? `The authentication backend failed (HTTP ${status}). Check the backend log for the Google-auth exception.`
+                : `Google sign-in failed${status ? ` (HTTP ${status})` : ''}. Please try again.`)
         );
       } else {
         setError(err instanceof Error ? err.message : 'Google sign-in failed. Please try again.');
