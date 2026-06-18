@@ -18,7 +18,7 @@ ENV VITE_API_BASE=$VITE_API_BASE
 
 RUN npm run build
 
-# Serve only the built frontend. Nginx also forwards /api-s4 to the existing backend.
+# Serve the built frontend. Nginx forwards /api to the backend.
 FROM nginx:1.27-alpine
 
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
