@@ -1,17 +1,40 @@
+```yaml
 services:
   - type: web
     name: s3-bibliometric
     runtime: docker
+
+    # Docker configuration
     dockerfilePath: ./Dockerfile
     dockerContext: .
+
+    # Render checks this route to confirm that the frontend is running.
     healthCheckPath: /
+
+    # Automatically deploy after changes are pushed to the connected branch.
+    autoDeploy: true
+
     envVars:
-      # Existing backend origin only; do not include /api-s4 and do not add a trailing slash.
-      - key: BACKEND_ORIGIN
-        sync: false
-      # This is intentionally a same-origin path handled by Nginx.
+      # The browser calls the API through the frontend Nginx proxy.
+      # This value is compiled into the Vite frontend during the Docker build.
       - key: VITE_API_BASE
         value: /api
-      # Google OAuth client IDs are public identifiers, but supply yours in Render instead of Git.
+
+      # Enter the backend's public origin in the Render dashboard.
+      #
+      # Correct:
+      # https://your-backend-service.onrender.com
+      #
+      # Incorrect:
+      # https://your-backend-service.onrender.com/api
+      #
+      # Do not include a trailing slash.
+      - key: BACKEND_ORIGIN
+        sync: false
+
+      # Enter your Google OAuth web client ID in the Render dashboard.
+      # Example:
+      # 123456789-example.apps.googleusercontent.com
       - key: VITE_GOOGLE_CLIENT_ID
         sync: false
+```
