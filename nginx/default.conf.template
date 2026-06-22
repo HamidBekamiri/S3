@@ -6,11 +6,33 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # Keep API requests same-origin in the browser and forward them to the existing backend.
-    # BACKEND_ORIGIN must be only the origin, for example: https://api.example.com
+    # Backend origin must be only the origin, for example:
+    # https://your-backend-service.onrender.com
+    # Do NOT include /api at the end.
+
+    # New/recommended frontend API base: /api
+    # This keeps /api/... unchanged when forwarding to FastAPI.
+    location /api/ {
+        proxy_pass ${BACKEND_ORIGIN};
+        proxy_http_version 1.1;
+        proxy_ssl_server_name on;
+
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        client_max_body_size 250m;
+    }
+
+    # Backward-compatible API base used by some Render deployments: /api-s4
+    # Converts /api-s4/analyze/... into /api/analyze/... on the backend.
     location /api-s4/ {
-        # Frontend calls /api-s4/... but the FastAPI backend routes are /api/...
-        # Rewrite before proxying so /api-s4/upload-csv/preview becomes /api/upload-csv/preview.
         rewrite ^/api-s4/(.*)$ /api/$1 break;
         proxy_pass ${BACKEND_ORIGIN};
         proxy_http_version 1.1;
@@ -29,14 +51,12 @@ server {
         client_max_body_size 250m;
     }
 
-    # Long-lived caching for hashed Vite assets.
     location /assets/ {
         try_files $uri =404;
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
 
-    # SPA fallback.
     location / {
         try_files $uri $uri/ /index.html;
     }
