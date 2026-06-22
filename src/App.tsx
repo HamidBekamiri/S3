@@ -277,12 +277,12 @@ function isCsvLikeFile(file: File): boolean {
 const IMPORTANT_MAPPING_FIELDS = [
   { key: "title", label: "Title", required: true },
   { key: "abstract", label: "Abstract", required: false },
-  { key: "year", label: "Year", required: false },
-  { key: "references", label: "References", required: false },
-  { key: "cited_by", label: "Cited by", required: false },
 ];
 
 const OPTIONAL_MAPPING_FIELDS = [
+  { key: "year", label: "Year", required: false },
+  { key: "references", label: "References", required: false },
+  { key: "cited_by", label: "Cited by", required: false },
   { key: "authors", label: "Authors", required: false },
   { key: "affiliations", label: "Affiliations", required: false },
   { key: "doi", label: "DOI", required: false },
@@ -2953,12 +2953,6 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                     padding: "1rem",
                   }}
                 >
-                  <h3 style={{ marginTop: 0 }}>Input Settings</h3>
-
-                  <p style={{ marginBottom: "0.75rem" }}>
-                    Rows detected: <strong>{dataPreview.rows}</strong>
-                  </p>
-
                   {dataPreview.sheet_names.length > 1 && (
                     <label className="field" style={{ marginBottom: "1rem" }}>
                       <span className="field-label">Excel sheet</span>
@@ -2975,9 +2969,9 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                     </label>
                   )}
 
-                  <h4>Important column mapping</h4>
+                  <h4 style={{ marginTop: 0 }}>Column mapping</h4>
                   <p style={{ marginTop: "-0.25rem", marginBottom: "0.75rem", opacity: 0.8 }}>
-                    Map only the fields needed for the main analysis. Other fields are optional.
+                    Title and Abstract are the main fields needed to run the analysis. Mapping optional fields can make the analysis more accurate and complete.
                   </p>
 
                   <div
@@ -3011,7 +3005,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
 
                   {showOptionalMappingFields && (
                     <div style={{ marginTop: "1rem" }}>
-                      <h4>Optional column mapping</h4>
+                      <h4>Optional fields</h4>
                       <div
                         style={{
                           display: "grid",
