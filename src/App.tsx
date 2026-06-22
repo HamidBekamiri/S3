@@ -274,19 +274,53 @@ function isCsvLikeFile(file: File): boolean {
   return name.endsWith(".csv") || name.endsWith(".txt") || name.endsWith(".tsv");
 }
 
-const MAPPING_FIELDS = [
+const IMPORTANT_MAPPING_FIELDS = [
   { key: "title", label: "Title", required: true },
   { key: "abstract", label: "Abstract", required: false },
   { key: "year", label: "Year", required: false },
+  { key: "references", label: "References", required: false },
+  { key: "cited_by", label: "Cited by", required: false },
+];
+
+const OPTIONAL_MAPPING_FIELDS = [
   { key: "authors", label: "Authors", required: false },
   { key: "affiliations", label: "Affiliations", required: false },
   { key: "doi", label: "DOI", required: false },
-  { key: "cited_by", label: "Citations", required: false },
-  { key: "references", label: "References", required: false },
   { key: "source_title", label: "Source / Journal", required: false },
   { key: "keywords", label: "Keywords", required: false },
   { key: "eid", label: "EID / Paper ID", required: false },
 ];
+
+const MappingSelect: React.FC<{
+  field: { key: string; label: string; required: boolean };
+  columns: string[];
+  columnMapping: ColumnMapping;
+  setColumnMapping: React.Dispatch<React.SetStateAction<ColumnMapping>>;
+}> = ({ field, columns, columnMapping, setColumnMapping }) => (
+  <label className="field" key={field.key}>
+    <span className="field-label">
+      {field.label}
+      {field.required ? " *" : ""}
+    </span>
+
+    <select
+      value={columnMapping[field.key] || ""}
+      onChange={(e) =>
+        setColumnMapping((prev) => ({
+          ...prev,
+          [field.key]: e.target.value,
+        }))
+      }
+    >
+      <option value="">-- Not mapped --</option>
+      {columns.map((col) => (
+        <option key={col} value={col}>
+          {col}
+        </option>
+      ))}
+    </select>
+  </label>
+);
 
 function stepIndexFromStage(stage: string): number {
   const lower = (stage || "").toLowerCase();
@@ -2307,7 +2341,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
   const [selectedSheet, setSelectedSheet] = useState<string>("");
   const [isPreviewingFile, setIsPreviewingFile] = useState(false);
-  const [previewNotice, setPreviewNotice] = useState<string | null>(null);
+  const [showOptionalMappingFields, setShowOptionalMappingFields] = useState(false);
   const [isCleaningData, setIsCleaningData] = useState(false);
   const [modalMode, setModalMode] = useState<'labeling' | 'cleaning'>('labeling');
 
@@ -2577,7 +2611,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
     setDataPreview(null);
     setColumnMapping({});
     setSelectedSheet("");
-    setPreviewNotice(null);
+    setShowOptionalMappingFields(false);
     // Reset labeling state on new file
     setLlmLabels({});
 
@@ -2590,7 +2624,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
       setDataPreview(preview);
       setColumnMapping(preview.inferred_mapping || {});
       setSelectedSheet(preview.selected_sheet || "");
-      setPreviewNotice(null);
+      setShowOptionalMappingFields(false);
     } catch (err: any) {
       // If the deployed backend does not yet have /upload-csv/preview, do not block upload.
       // For CSV/TXT/TSV files, create a lightweight browser-side preview so the new mapping UI stays visible.
@@ -2600,18 +2634,12 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
             const localPreview = await previewCsvInBrowser(file);
             setDataPreview(localPreview);
             setColumnMapping(localPreview.inferred_mapping || {});
-            setPreviewNotice(
-              "Backend preview is not deployed yet, so this preview was generated in the browser. The old CSV pipeline can still run. Deploy the backend preview endpoint to enable Excel sheet preview and server-side validation."
-            );
+            // Backend preview is not deployed yet; keep the upload UI usable with browser-side CSV preview.
           } catch (localErr: any) {
-            setPreviewNotice(
-              "Backend preview is not deployed yet. You can still run the old CSV pipeline, but column preview is unavailable for this file."
-            );
+            // Keep the selected file and allow the user to run the existing CSV pipeline.
           }
         } else {
-          setPreviewNotice(
-            "Excel preview requires the new backend preview endpoint. Deploy the backend update before using Excel files."
-          );
+          setCsvError("Excel preview requires the backend preview endpoint. Deploy the backend update before using Excel files.");
         }
       } else {
         setCsvError(
@@ -2638,9 +2666,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
       setSelectedSheet(preview.selected_sheet || sheet);
     } catch (err: any) {
       if (err?.status === 404 || String(err?.message || "").toLowerCase().includes("not found")) {
-        setPreviewNotice(
-          "Excel sheet preview requires the new backend preview endpoint. Deploy the backend update before using Excel sheet selection."
-        );
+        setCsvError("Excel sheet preview requires the backend preview endpoint. Deploy the backend update before using Excel sheet selection.");
       } else {
         setCsvError(err?.message || "Could not preview this Excel sheet.");
       }
@@ -2923,11 +2949,6 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                 <div style={{ marginTop: "1rem" }}>Reading file preview...</div>
               )}
 
-              {previewNotice && (
-                <div className="message" style={{ marginTop: "1rem" }}>
-                  {previewNotice}
-                </div>
-              )}
 
               {dataPreview && (
                 <div
@@ -2938,7 +2959,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                     padding: "1rem",
                   }}
                 >
-                  <h3 style={{ marginTop: 0 }}>Input Preview</h3>
+                  <h3 style={{ marginTop: 0 }}>Input Settings</h3>
 
                   <p style={{ marginBottom: "0.75rem" }}>
                     Rows detected: <strong>{dataPreview.rows}</strong>
@@ -2960,7 +2981,11 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                     </label>
                   )}
 
-                  <h4>Column mapping</h4>
+                  <h4>Important column mapping</h4>
+                  <p style={{ marginTop: "-0.25rem", marginBottom: "0.75rem", opacity: 0.8 }}>
+                    Map only the fields needed for the main analysis. Other fields are optional.
+                  </p>
+
                   <div
                     style={{
                       display: "grid",
@@ -2968,64 +2993,56 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                       gap: "0.75rem",
                     }}
                   >
-                    {MAPPING_FIELDS.map((field) => (
-                      <label className="field" key={field.key}>
-                        <span className="field-label">
-                          {field.label}
-                          {field.required ? " *" : ""}
-                        </span>
-
-                        <select
-                          value={columnMapping[field.key] || ""}
-                          onChange={(e) =>
-                            setColumnMapping((prev) => ({
-                              ...prev,
-                              [field.key]: e.target.value,
-                            }))
-                          }
-                        >
-                          <option value="">-- Not mapped --</option>
-                          {dataPreview.columns.map((col) => (
-                            <option key={col} value={col}>
-                              {col}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                    {IMPORTANT_MAPPING_FIELDS.map((field) => (
+                      <MappingSelect
+                        key={field.key}
+                        field={field}
+                        columns={dataPreview.columns}
+                        columnMapping={columnMapping}
+                        setColumnMapping={setColumnMapping}
+                      />
                     ))}
                   </div>
+
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    style={{ marginTop: "1rem" }}
+                    onClick={() => setShowOptionalMappingFields((value) => !value)}
+                  >
+                    {showOptionalMappingFields
+                      ? "Hide optional fields"
+                      : "Show optional fields"}
+                  </button>
+
+                  {showOptionalMappingFields && (
+                    <div style={{ marginTop: "1rem" }}>
+                      <h4>Optional column mapping</h4>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                          gap: "0.75rem",
+                        }}
+                      >
+                        {OPTIONAL_MAPPING_FIELDS.map((field) => (
+                          <MappingSelect
+                            key={field.key}
+                            field={field}
+                            columns={dataPreview.columns}
+                            columnMapping={columnMapping}
+                            setColumnMapping={setColumnMapping}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {!columnMapping.title && (
                     <div style={{ marginTop: "0.75rem", color: "crimson" }}>
                       Please map a Title column before running the analysis.
                     </div>
                   )}
-
-                  <h4 style={{ marginTop: "1rem" }}>First rows</h4>
-                  <div style={{ overflowX: "auto", maxHeight: "260px" }}>
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          {dataPreview.columns.slice(0, 8).map((col) => (
-                            <th key={col}>{col}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dataPreview.preview.map((row, idx) => (
-                          <tr key={idx}>
-                            {dataPreview.columns.slice(0, 8).map((col) => (
-                              <td key={col}>
-                                {row[col] === null || row[col] === undefined
-                                  ? ""
-                                  : String(row[col]).slice(0, 120)}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
                 </div>
               )}
 
