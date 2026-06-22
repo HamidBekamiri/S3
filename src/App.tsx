@@ -2424,10 +2424,14 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
       setColumnMapping(preview.inferred_mapping || {});
       setSelectedSheet(preview.selected_sheet || "");
     } catch (err: any) {
-      setCsvError(
-        err?.message ||
-          "Could not preview this file. You can still try running the pipeline if the backend supports this input."
-      );
+      // Preview is optional. If the deployed backend does not yet have
+      // POST /api/upload-csv/preview, do not block the old Scopus CSV flow.
+      // The user can still click Run S3 pipeline, which uses /upload-csv/start.
+      console.warn("File preview failed; continuing without preview:", err);
+      setDataPreview(null);
+      setColumnMapping({});
+      setSelectedSheet("");
+      setCsvError(null);
     } finally {
       setIsPreviewingFile(false);
     }
@@ -2535,7 +2539,14 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
           : { percent: 100, label: "Done." }
       );
     } catch (err: any) {
-      setCsvError(err?.message ?? "Failed to analyze CSV.");
+      const message = err?.message || "Failed to analyze CSV.";
+      const url = err?.url ? `\nCalled URL: ${err.url}` : "";
+      const status = err?.status ? `HTTP status: ${err.status}\n` : "";
+      const help = err?.status === 404
+        ? "\n\nThis means the frontend reached a server, but that server does not have this upload route. Check that the backend is deployed and that Render proxy/VITE_API_BASE points to the correct backend."
+        : "";
+
+      setCsvError(`${status}${message}${url}${help}`);
       setCsvProgress((prev) =>
         prev
           ? { ...prev, percent: 100, label: "Failed (see error above)." }
