@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import {
   uploadAndAnalyzeCsv,
+  previewDataFile,
   generateTopicLabels,
   cleanInterdisciplinaryData,
   enhanceCitations,
@@ -23,6 +24,8 @@ import {
   loadMergersAcquisitionUsecase,
   loadCOOUsecase,
   type CsvAnalysisResult,
+  type ColumnMapping,
+  type DataPreviewResponse,
   API_BASE,
   assignOutlier,
 } from "./api";
@@ -104,6 +107,20 @@ const CSV_STEPS = [
   "Computing citation",
   "Computing year distribution",
   "Done",
+];
+
+const MAPPING_FIELDS = [
+  { key: "title", label: "Title", required: true },
+  { key: "abstract", label: "Abstract", required: false },
+  { key: "year", label: "Year", required: false },
+  { key: "authors", label: "Authors", required: false },
+  { key: "affiliations", label: "Affiliations", required: false },
+  { key: "doi", label: "DOI", required: false },
+  { key: "cited_by", label: "Citations", required: false },
+  { key: "references", label: "References", required: false },
+  { key: "source_title", label: "Source / Journal", required: false },
+  { key: "keywords", label: "Keywords", required: false },
+  { key: "eid", label: "EID / Paper ID", required: false },
 ];
 
 function stepIndexFromStage(stage: string): number {
@@ -2121,6 +2138,10 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
     percent: number;
     label: string;
   } | null>(null);
+  const [dataPreview, setDataPreview] = useState<DataPreviewResponse | null>(null);
+  const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
+  const [selectedSheet, setSelectedSheet] = useState<string>("");
+  const [isPreviewingFile, setIsPreviewingFile] = useState(false);
   const [isCleaningData, setIsCleaningData] = useState(false);
   const [modalMode, setModalMode] = useState<'labeling' | 'cleaning'>('labeling');
 
@@ -2380,14 +2401,55 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
 
 
 
-  const handleCsvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCsvChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
+
     setCsvFile(file);
     setCsvError(null);
     setCsvResult(null);
     setCsvProgress(null);
+    setDataPreview(null);
+    setColumnMapping({});
+    setSelectedSheet("");
     // Reset labeling state on new file
     setLlmLabels({});
+
+    if (!file) return;
+
+    setIsPreviewingFile(true);
+
+    try {
+      const preview = await previewDataFile(file);
+      setDataPreview(preview);
+      setColumnMapping(preview.inferred_mapping || {});
+      setSelectedSheet(preview.selected_sheet || "");
+    } catch (err: any) {
+      setCsvError(
+        err?.message ||
+          "Could not preview this file. You can still try running the pipeline if the backend supports this input."
+      );
+    } finally {
+      setIsPreviewingFile(false);
+    }
+  };
+
+  const handleSheetChange = async (sheet: string) => {
+    if (!csvFile) return;
+
+    setSelectedSheet(sheet);
+    setIsPreviewingFile(true);
+    setCsvError(null);
+
+    try {
+      const preview = await previewDataFile(csvFile, sheet);
+      setDataPreview(preview);
+      setColumnMapping(preview.inferred_mapping || {});
+      setSelectedSheet(preview.selected_sheet || sheet);
+    } catch (err: any) {
+      setCsvError(err?.message || "Could not preview this Excel sheet.");
+    } finally {
+      setIsPreviewingFile(false);
+    }
   };
 
   const handleGenerateLabels = async () => {
@@ -2462,7 +2524,9 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
         },
         startYear === "" ? undefined : startYear,
         endYear === "" ? undefined : endYear,
-        windowSize
+        windowSize,
+        dataPreview ? columnMapping : undefined,
+        selectedSheet || undefined
       );
       setCsvResult(result);
       setCsvProgress((prev) =>
@@ -2604,10 +2668,10 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
           {/* CSV pipeline */}
           <section className="card">
             <div className="card-header">
-              <h2>0. Upload Scopus CSV (S3 pipeline)</h2>
+              <h2>0. Upload CSV or Excel file (S3 pipeline)</h2>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                 <span className="card-subtitle">
-                  Upload a CSV exported from Scopus and run the S3 analysis. The stages below show progress.
+                  Upload a Scopus, Web of Science, Dimensions, OpenAlex, or custom CSV/Excel file. Preview and map columns before analysis.
                 </span>
                 <button
                   onClick={() => setShowScopusPage(true)}
@@ -2650,13 +2714,117 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
             </div>
             <div className="card-body">
               <label className="field">
-                <span className="field-label">Scopus CSV file</span>
+                <span className="field-label">CSV or Excel file</span>
                 <input
                   type="file"
-                  accept=".csv,text/csv"
+                  accept=".csv,.txt,.tsv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                   onChange={handleCsvChange}
                 />
               </label>
+
+              {isPreviewingFile && (
+                <div style={{ marginTop: "1rem" }}>Reading file preview...</div>
+              )}
+
+              {dataPreview && (
+                <div
+                  style={{
+                    marginTop: "1rem",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    padding: "1rem",
+                  }}
+                >
+                  <h3 style={{ marginTop: 0 }}>Input Preview</h3>
+
+                  <p style={{ marginBottom: "0.75rem" }}>
+                    Rows detected: <strong>{dataPreview.rows}</strong>
+                  </p>
+
+                  {dataPreview.sheet_names.length > 1 && (
+                    <label className="field" style={{ marginBottom: "1rem" }}>
+                      <span className="field-label">Excel sheet</span>
+                      <select
+                        value={selectedSheet}
+                        onChange={(e) => handleSheetChange(e.target.value)}
+                      >
+                        {dataPreview.sheet_names.map((sheet) => (
+                          <option key={sheet} value={sheet}>
+                            {sheet}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+
+                  <h4>Column mapping</h4>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: "0.75rem",
+                    }}
+                  >
+                    {MAPPING_FIELDS.map((field) => (
+                      <label className="field" key={field.key}>
+                        <span className="field-label">
+                          {field.label}
+                          {field.required ? " *" : ""}
+                        </span>
+
+                        <select
+                          value={columnMapping[field.key] || ""}
+                          onChange={(e) =>
+                            setColumnMapping((prev) => ({
+                              ...prev,
+                              [field.key]: e.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">-- Not mapped --</option>
+                          {dataPreview.columns.map((col) => (
+                            <option key={col} value={col}>
+                              {col}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+
+                  {!columnMapping.title && (
+                    <div style={{ marginTop: "0.75rem", color: "crimson" }}>
+                      Please map a Title column before running the analysis.
+                    </div>
+                  )}
+
+                  <h4 style={{ marginTop: "1rem" }}>First rows</h4>
+                  <div style={{ overflowX: "auto", maxHeight: "260px" }}>
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          {dataPreview.columns.slice(0, 8).map((col) => (
+                            <th key={col}>{col}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dataPreview.preview.map((row, idx) => (
+                          <tr key={idx}>
+                            {dataPreview.columns.slice(0, 8).map((col) => (
+                              <td key={col}>
+                                {row[col] === null || row[col] === undefined
+                                  ? ""
+                                  : String(row[col]).slice(0, 120)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               <div style={{ marginTop: "1rem", marginBottom: "1rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: showFilters ? "0.5rem" : "0" }}>
@@ -2724,7 +2892,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                 <button
                   className="primary-button"
                   onClick={handleRunCsvAnalysis}
-                  disabled={!csvFile || isUploadingCsv}
+                  disabled={!csvFile || isUploadingCsv || isPreviewingFile || (dataPreview ? !columnMapping.title : false)}
                 >
                   {isUploadingCsv ? "Processing…" : "Run S3 pipeline"}
                 </button>
