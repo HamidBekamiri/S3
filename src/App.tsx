@@ -2626,25 +2626,21 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
       setSelectedSheet(preview.selected_sheet || "");
       setShowOptionalMappingFields(false);
     } catch (err: any) {
-      // If the deployed backend does not yet have /upload-csv/preview, do not block upload.
-      // For CSV/TXT/TSV files, create a lightweight browser-side preview so the new mapping UI stays visible.
-      if (err?.status === 404 || String(err?.message || "").toLowerCase().includes("not found")) {
-        if (isCsvLikeFile(file)) {
-          try {
-            const localPreview = await previewCsvInBrowser(file);
-            setDataPreview(localPreview);
-            setColumnMapping(localPreview.inferred_mapping || {});
-            // Backend preview is not deployed yet; keep the upload UI usable with browser-side CSV preview.
-          } catch (localErr: any) {
-            // Keep the selected file and allow the user to run the existing CSV pipeline.
-          }
-        } else {
-          setCsvError("Excel preview requires the backend preview endpoint. Deploy the backend update before using Excel files.");
+      // Do not block upload if the server-side preview endpoint is missing or the proxy/backend returns 404/500/502.
+      // CSV/TXT/TSV can still be previewed in the browser and uploaded through the existing S3 pipeline.
+      if (isCsvLikeFile(file)) {
+        try {
+          const localPreview = await previewCsvInBrowser(file);
+          setDataPreview(localPreview);
+          setColumnMapping(localPreview.inferred_mapping || {});
+        } catch (localErr: any) {
+          // Keep the selected file and allow the user to run the existing CSV pipeline.
+          setDataPreview(null);
+          setColumnMapping({});
         }
       } else {
         setCsvError(
-          err?.message ||
-            "Could not preview this file. You can still try running the pipeline if the backend supports this input."
+          "Excel preview requires the backend preview endpoint. The preview server returned an error, so deploy/fix the backend before using Excel files."
         );
       }
     } finally {
@@ -2665,11 +2661,9 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
       setColumnMapping(preview.inferred_mapping || {});
       setSelectedSheet(preview.selected_sheet || sheet);
     } catch (err: any) {
-      if (err?.status === 404 || String(err?.message || "").toLowerCase().includes("not found")) {
-        setCsvError("Excel sheet preview requires the backend preview endpoint. Deploy the backend update before using Excel sheet selection.");
-      } else {
-        setCsvError(err?.message || "Could not preview this Excel sheet.");
-      }
+      setCsvError(
+        "Excel sheet preview requires the backend preview endpoint. The preview server returned an error, so deploy/fix the backend before using Excel sheet selection."
+      );
     } finally {
       setIsPreviewingFile(false);
     }
