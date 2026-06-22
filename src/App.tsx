@@ -14,7 +14,6 @@ import {
 } from "recharts";
 import {
   uploadAndAnalyzeCsv,
-  previewDataFile,
   generateTopicLabels,
   cleanInterdisciplinaryData,
   enhanceCitations,
@@ -2401,7 +2400,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
 
 
 
-  const handleCsvChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCsvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
 
     setCsvFile(file);
@@ -2411,30 +2410,14 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
     setDataPreview(null);
     setColumnMapping({});
     setSelectedSheet("");
+    setIsPreviewingFile(false);
     // Reset labeling state on new file
     setLlmLabels({});
 
-    if (!file) return;
-
-    setIsPreviewingFile(true);
-
-    try {
-      const preview = await previewDataFile(file);
-      setDataPreview(preview);
-      setColumnMapping(preview.inferred_mapping || {});
-      setSelectedSheet(preview.selected_sheet || "");
-    } catch (err: any) {
-      // Preview is optional. If the deployed backend does not yet have
-      // POST /api/upload-csv/preview, do not block the old Scopus CSV flow.
-      // The user can still click Run S3 pipeline, which uses /upload-csv/start.
-      console.warn("File preview failed; continuing without preview:", err);
-      setDataPreview(null);
-      setColumnMapping({});
-      setSelectedSheet("");
-      setCsvError(null);
-    } finally {
-      setIsPreviewingFile(false);
-    }
+    // IMPORTANT:
+    // Do not call /api/upload-csv/preview here.
+    // Some deployed backends do not have the new preview endpoint yet.
+    // This keeps the old Scopus CSV upload flow working through /upload-csv/start.
   };
 
   const handleSheetChange = async (sheet: string) => {
@@ -2725,10 +2708,10 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
             </div>
             <div className="card-body">
               <label className="field">
-                <span className="field-label">CSV or Excel file</span>
+                <span className="field-label">CSV file</span>
                 <input
                   type="file"
-                  accept=".csv,.txt,.tsv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                  accept=".csv,.txt,.tsv,text/csv"
                   onChange={handleCsvChange}
                 />
               </label>
@@ -2903,7 +2886,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                 <button
                   className="primary-button"
                   onClick={handleRunCsvAnalysis}
-                  disabled={!csvFile || isUploadingCsv || isPreviewingFile || (dataPreview ? !columnMapping.title : false)}
+                  disabled={!csvFile || isUploadingCsv}
                 >
                   {isUploadingCsv ? "Processing…" : "Run S3 pipeline"}
                 </button>
