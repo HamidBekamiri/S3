@@ -522,10 +522,25 @@ export interface CsvAnalysisResult {
   directed_community_citation_metrics?: CommunityCitationMetric[];
 }
 
+// ---------- flexible input preview types ----------
+
+export type ColumnMapping = Record<string, string>;
+
+export interface DataPreviewResponse {
+  filename: string;
+  columns: string[];
+  preview: Record<string, any>[];
+  inferred_mapping: ColumnMapping;
+  sheet_names: string[];
+  selected_sheet?: string | null;
+  rows: number;
+}
+
 // ---------- upload job API types ----------
 
 export interface UploadJobStart {
   job_id: string;
+  job_directory?: string;
 }
 
 export interface UploadJobStatus {
@@ -579,19 +594,58 @@ export async function assignOutlier(
   });
 }
 
+// ---------- flexible data input preview ----------
+
+export async function previewDataFile(
+  file: File,
+  sheetName?: string
+): Promise<DataPreviewResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  if (sheetName) {
+    formData.append("sheet_name", sheetName);
+  }
+
+  const res = await fetch(`${API_BASE}/upload-csv/preview`, {
+    method: "POST",
+    headers: withAuthHeaders(),
+    body: formData,
+  });
+
+  return handleResponse<DataPreviewResponse>(res);
+}
+
 // ---------- CSV upload job with real progress ----------
 
 async function startUploadCsvJob(
   file: File,
   startYear?: number,
   endYear?: number,
-  windowSize: number = 2
+  windowSize: number = 2,
+  columnMapping?: ColumnMapping,
+  sheetName?: string
 ): Promise<UploadJobStart> {
   const formData = new FormData();
   formData.append("file", file);
-  if (startYear !== undefined) formData.append("start_year", startYear.toString());
-  if (endYear !== undefined) formData.append("end_year", endYear.toString());
+
+  if (startYear !== undefined) {
+    formData.append("start_year", startYear.toString());
+  }
+
+  if (endYear !== undefined) {
+    formData.append("end_year", endYear.toString());
+  }
+
   formData.append("window_size", windowSize.toString());
+
+  if (columnMapping && Object.keys(columnMapping).length > 0) {
+    formData.append("mapping_json", JSON.stringify(columnMapping));
+  }
+
+  if (sheetName) {
+    formData.append("sheet_name", sheetName);
+  }
 
   const res = await fetch(`${API_BASE}/upload-csv/start`, {
     method: "POST",
@@ -620,9 +674,18 @@ export async function uploadAndAnalyzeCsv(
   onProgress?: (stage: string, progress: number) => void,
   startYear?: number,
   endYear?: number,
-  windowSize: number = 2
+  windowSize: number = 2,
+  columnMapping?: ColumnMapping,
+  sheetName?: string
 ): Promise<CsvAnalysisResult & { job_id: string }> {
-  const { job_id } = await startUploadCsvJob(file, startYear, endYear, windowSize);
+  const { job_id } = await startUploadCsvJob(
+    file,
+    startYear,
+    endYear,
+    windowSize,
+    columnMapping,
+    sheetName
+  );
 
   return new Promise<CsvAnalysisResult & { job_id: string }>((resolve, reject) => {
     const poll = async () => {
