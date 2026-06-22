@@ -109,6 +109,171 @@ const CSV_STEPS = [
   "Done",
 ];
 
+
+const COLUMN_ALIASES: Record<string, string[]> = {
+  title: ["title", "article title", "document title", "paper title", "publication title", "work title"],
+  abstract: ["abstract", "summary", "description", "abstract note", "article abstract", "document abstract"],
+  year: ["year", "publication year", "pub year", "py", "published year", "date", "cover date"],
+  authors: ["authors", "author(s)", "author names", "authors names", "au", "creators", "researchers"],
+  affiliations: ["affiliations", "affiliation", "author affiliations", "authors with affiliations", "c1", "institutions"],
+  doi: ["doi", "digital object identifier"],
+  cited_by: ["cited by", "citations", "citation count", "times cited", "citedbycount", "referenced by count"],
+  references: ["references", "reference", "refs", "cited references", "cr", "bibliography", "references list"],
+  source_title: ["source title", "journal", "journal title", "publication name", "source", "so", "container title"],
+  keywords: ["author keywords", "keywords", "index keywords", "de", "id", "subject", "subjects"],
+  eid: ["eid", "scopus id", "scopusid", "ut", "pmid", "paper id", "id", "openalex id"],
+};
+
+function normalizeColumnName(value: string): string {
+  return value
+    .replace(/^\ufeff/, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function inferClientColumnMapping(columns: string[]): ColumnMapping {
+  const normalizedToOriginal = new Map<string, string>();
+  columns.forEach((column) => normalizedToOriginal.set(normalizeColumnName(column), column));
+
+  const mapping: ColumnMapping = {};
+
+  Object.entries(COLUMN_ALIASES).forEach(([field, aliases]) => {
+    let found = "";
+
+    for (const alias of aliases) {
+      const exact = normalizedToOriginal.get(normalizeColumnName(alias));
+      if (exact) {
+        found = exact;
+        break;
+      }
+    }
+
+    if (!found) {
+      for (const column of columns) {
+        const normalizedColumn = normalizeColumnName(column);
+        if (
+          aliases.some((alias) => {
+            const normalizedAlias = normalizeColumnName(alias);
+            return normalizedAlias.length >= 4 && normalizedColumn.includes(normalizedAlias);
+          })
+        ) {
+          found = column;
+          break;
+        }
+      }
+    }
+
+    if (found) mapping[field] = found;
+  });
+
+  return mapping;
+}
+
+function countDelimiter(line: string, delimiter: string): number {
+  let count = 0;
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const next = line[i + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      i += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (!inQuotes && char === delimiter) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+function parseDelimitedLine(line: string, delimiter: string): string[] {
+  const cells: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const next = line[i + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      current += '"';
+      i += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (!inQuotes && char === delimiter) {
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  cells.push(current.trim());
+  return cells;
+}
+
+async function previewCsvInBrowser(file: File): Promise<DataPreviewResponse> {
+  const text = await file.slice(0, 1024 * 1024).text();
+  const cleanedText = text.replace(/^\ufeff/, "");
+  const lines = cleanedText.split(/\r?\n/).filter((line) => line.trim().length > 0);
+
+  if (lines.length === 0) {
+    throw new Error("The selected CSV file appears to be empty.");
+  }
+
+  const delimiters = [",", ";", "\t", "|"];
+  const delimiter = delimiters
+    .map((candidate) => ({ candidate, count: countDelimiter(lines[0], candidate) }))
+    .sort((a, b) => b.count - a.count)[0].candidate;
+
+  const columns = parseDelimitedLine(lines[0], delimiter).map((column, index) =>
+    column || `Column ${index + 1}`
+  );
+
+  const preview = lines.slice(1, 11).map((line) => {
+    const values = parseDelimitedLine(line, delimiter);
+    const row: Record<string, any> = {};
+    columns.forEach((column, index) => {
+      row[column] = values[index] ?? "";
+    });
+    return row;
+  });
+
+  return {
+    filename: file.name,
+    columns,
+    preview,
+    inferred_mapping: inferClientColumnMapping(columns),
+    sheet_names: [],
+    selected_sheet: null,
+    rows: Math.max(lines.length - 1, preview.length),
+  };
+}
+
+function isCsvLikeFile(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return name.endsWith(".csv") || name.endsWith(".txt") || name.endsWith(".tsv");
+}
+
 const MAPPING_FIELDS = [
   { key: "title", label: "Title", required: true },
   { key: "abstract", label: "Abstract", required: false },
@@ -2142,6 +2307,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
   const [selectedSheet, setSelectedSheet] = useState<string>("");
   const [isPreviewingFile, setIsPreviewingFile] = useState(false);
+  const [previewNotice, setPreviewNotice] = useState<string | null>(null);
   const [isCleaningData, setIsCleaningData] = useState(false);
   const [modalMode, setModalMode] = useState<'labeling' | 'cleaning'>('labeling');
 
@@ -2401,7 +2567,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
 
 
 
-  const handleCsvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCsvChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
 
     setCsvFile(file);
@@ -2411,14 +2577,51 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
     setDataPreview(null);
     setColumnMapping({});
     setSelectedSheet("");
-    setIsPreviewingFile(false);
+    setPreviewNotice(null);
     // Reset labeling state on new file
     setLlmLabels({});
 
-    // IMPORTANT:
-    // Do not call /api/upload-csv/preview here.
-    // Some deployed backends do not have the new preview endpoint yet.
-    // This keeps the old Scopus CSV upload flow working through /upload-csv/start.
+    if (!file) return;
+
+    setIsPreviewingFile(true);
+
+    try {
+      const preview = await previewDataFile(file);
+      setDataPreview(preview);
+      setColumnMapping(preview.inferred_mapping || {});
+      setSelectedSheet(preview.selected_sheet || "");
+      setPreviewNotice(null);
+    } catch (err: any) {
+      // If the deployed backend does not yet have /upload-csv/preview, do not block upload.
+      // For CSV/TXT/TSV files, create a lightweight browser-side preview so the new mapping UI stays visible.
+      if (err?.status === 404 || String(err?.message || "").toLowerCase().includes("not found")) {
+        if (isCsvLikeFile(file)) {
+          try {
+            const localPreview = await previewCsvInBrowser(file);
+            setDataPreview(localPreview);
+            setColumnMapping(localPreview.inferred_mapping || {});
+            setPreviewNotice(
+              "Backend preview is not deployed yet, so this preview was generated in the browser. The old CSV pipeline can still run. Deploy the backend preview endpoint to enable Excel sheet preview and server-side validation."
+            );
+          } catch (localErr: any) {
+            setPreviewNotice(
+              "Backend preview is not deployed yet. You can still run the old CSV pipeline, but column preview is unavailable for this file."
+            );
+          }
+        } else {
+          setPreviewNotice(
+            "Excel preview requires the new backend preview endpoint. Deploy the backend update before using Excel files."
+          );
+        }
+      } else {
+        setCsvError(
+          err?.message ||
+            "Could not preview this file. You can still try running the pipeline if the backend supports this input."
+        );
+      }
+    } finally {
+      setIsPreviewingFile(false);
+    }
   };
 
   const handleSheetChange = async (sheet: string) => {
@@ -2434,7 +2637,13 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
       setColumnMapping(preview.inferred_mapping || {});
       setSelectedSheet(preview.selected_sheet || sheet);
     } catch (err: any) {
-      setCsvError(err?.message || "Could not preview this Excel sheet.");
+      if (err?.status === 404 || String(err?.message || "").toLowerCase().includes("not found")) {
+        setPreviewNotice(
+          "Excel sheet preview requires the new backend preview endpoint. Deploy the backend update before using Excel sheet selection."
+        );
+      } else {
+        setCsvError(err?.message || "Could not preview this Excel sheet.");
+      }
     } finally {
       setIsPreviewingFile(false);
     }
@@ -2523,14 +2732,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
           : { percent: 100, label: "Done." }
       );
     } catch (err: any) {
-      const message = err?.message || "Failed to analyze CSV.";
-      const url = err?.url ? `\nCalled URL: ${err.url}` : "";
-      const status = err?.status ? `HTTP status: ${err.status}\n` : "";
-      const help = err?.status === 404
-        ? "\n\nThis means the frontend reached a server, but that server does not have this upload route. Check that the backend is deployed and that Render proxy/VITE_API_BASE points to the correct backend."
-        : "";
-
-      setCsvError(`${status}${message}${url}${help}`);
+      setCsvError(err?.message ?? "Failed to analyze CSV.");
       setCsvProgress((prev) =>
         prev
           ? { ...prev, percent: 100, label: "Failed (see error above)." }
@@ -2709,16 +2911,22 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
             </div>
             <div className="card-body">
               <label className="field">
-                <span className="field-label">CSV file</span>
+                <span className="field-label">CSV or Excel file</span>
                 <input
                   type="file"
-                  accept=".csv,.txt,.tsv,text/csv"
+                  accept=".csv,.txt,.tsv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                   onChange={handleCsvChange}
                 />
               </label>
 
               {isPreviewingFile && (
                 <div style={{ marginTop: "1rem" }}>Reading file preview...</div>
+              )}
+
+              {previewNotice && (
+                <div className="message" style={{ marginTop: "1rem" }}>
+                  {previewNotice}
+                </div>
               )}
 
               {dataPreview && (
@@ -2887,7 +3095,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                 <button
                   className="primary-button"
                   onClick={handleRunCsvAnalysis}
-                  disabled={!csvFile || isUploadingCsv}
+                  disabled={!csvFile || isUploadingCsv || isPreviewingFile || (dataPreview ? !columnMapping.title : false)}
                 >
                   {isUploadingCsv ? "Processing…" : "Run S3 pipeline"}
                 </button>
