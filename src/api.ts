@@ -822,6 +822,10 @@ export async function getEnhanceStatus(jobId: string, jobDirectory?: string): Pr
   return apiGet<EnrichmentStatus>(`/enhance-citations/${jobId}/status${query}`);
 }
 
+export async function refreshCitationAnalysis(jobId: string, jobDirectory?: string): Promise<Partial<CsvAnalysisResult>> {
+  return apiPost<Partial<CsvAnalysisResult>>(`/analyze/citations/${encodeURIComponent(jobId)}`, { job_directory: jobDirectory });
+}
+
 export async function downloadScopusReferences(jobId: string, jobDirectory?: string): Promise<void> {
   const directory = encodeURIComponent(jobDirectory || jobId);
   const response = await fetch(`${API_BASE}/download/${directory}/scopus_references.csv`, {

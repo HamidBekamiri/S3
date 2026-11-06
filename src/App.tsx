@@ -20,7 +20,7 @@ import {
   enhanceCitations,
   downloadScopusReferences,
   getEnhanceStatus,
-  fetchCitationMatrix,
+  refreshCitationAnalysis,
   type EnrichmentStatus,
   getInterdisciplinaryAnalysis,
   loadInnovationUsecase,
@@ -2835,24 +2835,19 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
         if (running) {
           timer = setTimeout(checkStatus, 2000);
         } else if (status.status === 'completed') {
-          setCitationRevision(value => value + 1);
-          const matrix = await fetchCitationMatrix(jobId, numCitationAnalysis, directory);
+          setEnrichmentMessage("References downloaded. Updating all citation analyses…");
+          const updated = await refreshCitationAnalysis(jobId, directory);
           if (cancelled) return;
-          setCsvResult(previous => previous?.job_id === jobId ? {
-            ...previous,
-            community_citation_metrics: matrix.metrics,
-            local_citations_stats: {
-              ...previous.local_citations_stats,
-              num_links: matrix.total_field_local_edges,
-              num_unique_pairs: matrix.total_field_local_edges,
-            },
-          } : previous);
+          setCsvResult(previous => previous?.job_id === jobId ? { ...previous, ...updated } : previous);
+          setCitationRevision(value => value + 1);
+          setEnrichmentMessage(`${status.message || 'Scopus references downloaded.'} All citation analyses are up to date.`);
+
         }
       } catch (error: any) {
         if (!cancelled) {
           setIsEnhancing(false);
-          setEnrichmentStatus({ status: 'error', file_exists: false });
-          setEnrichmentMessage(`Could not check Scopus references: ${error.message}`);
+          setEnrichmentStatus(previous => ({ ...previous, status: 'error', file_exists: previous?.file_exists ?? false }));
+          setEnrichmentMessage(`Could not finish updating citation analyses: ${error.message}`);
         }
       }
     };
@@ -3608,7 +3603,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                             enrichmentStatus.status === 'pending' ? 'Scopus search queued' : 'Searching Scopus references'}
                       </strong>
                       <p style={{ margin: '0.5rem 0' }}>{enrichmentMessage}</p>
-                      {enrichmentStatus.status === 'completed' && enrichmentStatus.file_exists && (
+                      {(enrichmentStatus.status === 'completed' || enrichmentStatus.status === 'error') && enrichmentStatus.file_exists && (
                         <div style={{ margin: '0.75rem 0' }}>
                           <button className="secondary-button" onClick={handleDownloadReferences} disabled={isDownloadingReferences}>
                             {isDownloadingReferences ? 'Downloading…' : 'Download references CSV'}
@@ -3739,7 +3734,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
             </div>
             <div className="card-body">
               {csvResult && 'job_id' in csvResult ? (
-                <KnowledgeTree jobId={(csvResult as any).job_id} />
+                <KnowledgeTree refreshKey={citationRevision} jobId={(csvResult as any).job_id} />
               ) : (
                 <div className="message info">Run analysis to view the Knowledge Tree.</div>
               )}

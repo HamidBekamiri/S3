@@ -6,6 +6,7 @@ import { API_BASE } from './api';
 
 interface KnowledgeTreeProps {
     jobId: string;
+    refreshKey?: number;
 }
 
 const formatPercent = (value: unknown): string => {
@@ -24,7 +25,7 @@ interface Paper {
     EID: string;
 }
 
-const KnowledgeTree: React.FC<KnowledgeTreeProps> = ({ jobId }) => {
+const KnowledgeTree: React.FC<KnowledgeTreeProps> = ({ jobId, refreshKey }) => {
     const [plotData, setPlotData] = useState<any>(null);
     const [treeMeta, setTreeMeta] = useState<any>(null);
     const [loading, setLoading] = useState<boolean>(false);
@@ -198,7 +199,7 @@ const KnowledgeTree: React.FC<KnowledgeTreeProps> = ({ jobId }) => {
         return () => {
             activeTreeRequest.current?.abort();
         };
-    }, [jobId, citationScale, topN, minCitations, showSelfCitations, linkType]);
+    }, [jobId, citationScale, topN, minCitations, showSelfCitations, linkType, refreshKey]);
 
     return (
         <div className="knowledge-tree-container" style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
