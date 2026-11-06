@@ -18,6 +18,9 @@ import {
   generateTopicLabels,
   cleanInterdisciplinaryData,
   enhanceCitations,
+  getEnhanceStatus,
+  fetchCitationMatrix,
+  type EnrichmentStatus,
   getInterdisciplinaryAnalysis,
   loadInnovationUsecase,
   loadEcosystemUsecase,
@@ -2362,7 +2365,11 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
   const [use8bit, setUse8bit] = useState(true);
   const [llmLabels, setLlmLabels] = useState<Record<number, string>>({});
   const [isLabeling, setIsLabeling] = useState(false);
-  const [isEnhancing, setIsEnhancing] = useState(false); // NEW
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [enrichmentMessage, setEnrichmentMessage] = useState("");
+  const [enrichmentStatus, setEnrichmentStatus] = useState<EnrichmentStatus | null>(null);
+  const [enrichmentRun, setEnrichmentRun] = useState(0);
+  const [citationRevision, setCitationRevision] = useState(0);
   const [isPdfManagerOpen, setIsPdfManagerOpen] = useState(false);
   const [pdfManagerFilterIds, setPdfManagerFilterIds] = useState<number[] | null>(null); // NEW
 
@@ -2797,24 +2804,76 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
     }
   };
 
-  const handleEnhanceCitations = async () => {
-    if (!csvResult || !('job_id' in csvResult)) return;
+  React.useEffect(() => {
+    const jobId = csvResult?.job_id;
+    if (!jobId) {
+      setEnrichmentStatus(null);
+      setEnrichmentMessage("");
+      setIsEnhancing(false);
+      return;
+    }
+    const directory = csvResult?.job_directory || undefined;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setEnrichmentMessage("");
+    setEnrichmentStatus(null);
+    setIsEnhancing(false);
+    const checkStatus = async () => {
+      try {
+        const status = await getEnhanceStatus(jobId, directory);
+        if (cancelled) return;
+        setEnrichmentStatus(status);
+        const running = status.status === 'pending' || status.status === 'running';
+        setIsEnhancing(running);
+        setEnrichmentMessage(status.message || (running
+          ? `Fetching Scopus references: ${status.processed ?? 0}${status.total ? ` / ${status.total}` : ''} papers processed.`
+          : status.status === 'completed' ? 'Scopus references are available.' : ''));
+        if (running) {
+          timer = setTimeout(checkStatus, 2000);
+        } else if (status.status === 'completed') {
+          setCitationRevision(value => value + 1);
+          const matrix = await fetchCitationMatrix(jobId, numCitationAnalysis, directory);
+          if (cancelled) return;
+          setCsvResult(previous => previous?.job_id === jobId ? {
+            ...previous,
+            community_citation_metrics: matrix.metrics,
+            local_citations_stats: {
+              ...previous.local_citations_stats,
+              num_links: matrix.total_field_local_edges,
+              num_unique_pairs: matrix.total_field_local_edges,
+            },
+          } : previous);
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setIsEnhancing(false);
+          setEnrichmentStatus({ status: 'error', file_exists: false });
+          setEnrichmentMessage(`Could not check Scopus references: ${error.message}`);
+        }
+      }
+    };
+    void checkStatus();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [csvResult?.job_id, csvResult?.job_directory, enrichmentRun, numCitationAnalysis]);
 
-    if (!scopusKey) {
+  const handleEnhanceCitations = async () => {
+    if (!csvResult?.job_id || isEnhancing) return;
+    if (!scopusKey.trim()) {
       alert("Please enter a Scopus API Key.");
       return;
     }
-
     setIsEnhancing(true);
-    setShowScopusKeyModal(false);
-
+    setEnrichmentStatus({ status: 'pending', file_exists: false });
+    setEnrichmentMessage("Starting Scopus reference search…");
     try {
-      const jobId = (csvResult as any).job_id;
-      await enhanceCitations(jobId, scopusKey, instToken);
-      alert("Scopus enrichment started! This runs in the background. Check back later via the 'Check Status' button.");
-    } catch (e: any) {
-      alert("Error starting enrichment: " + e.message);
-    } finally {
+      await enhanceCitations(csvResult.job_id, scopusKey.trim(), instToken.trim(), csvResult.job_directory || undefined);
+      setShowScopusKeyModal(false);
+      setScopusKey("");
+      setInstToken("");
+      setEnrichmentRun(value => value + 1);
+    } catch (error: any) {
+      setEnrichmentStatus({ status: 'error', file_exists: false });
+      setEnrichmentMessage(`Error starting Scopus search: ${error.message}`);
       setIsEnhancing(false);
     }
   };
@@ -3471,8 +3530,10 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                   <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem', color: 'white' }}>Underlying Citation Matrix</h3>
                   {(currentUsecase || csvResult?.job_id) && (
                     <CitationMatrix
-                      usecase={currentUsecase || ''}
+                      usecase={csvResult?.job_id || currentUsecase || ''}
                       jobId={csvResult?.job_id}
+                      jobDirectory={csvResult?.job_directory || undefined}
+                      refreshKey={citationRevision}
                       onCommunityClick={handleCommunityClick}
                     />
                   )}
@@ -3488,7 +3549,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
             <div className="card-header">
               <h2>2. Citation Analysis</h2>
               <span className="card-subtitle">
-                Local citation confusion matrix between top 10 communities.
+                Local citation confusion matrix between the selected top communities.
               </span>
             </div>
             <div className="card-body">
@@ -3502,6 +3563,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                   <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem", alignItems: "center" }}>
                     <button
                       onClick={() => setShowScopusKeyModal(true)}
+                      disabled={isEnhancing}
                       style={{
                         padding: "0.5rem 1rem",
                         background: "#f0f0f0",
@@ -3511,10 +3573,54 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                         fontSize: "0.9rem"
                       }}
                     >
-                      Search Scopus References
+                      {isEnhancing ? "Searching Scopus References…" : "Search Scopus References"}
                     </button>
                   </div>
 
+                  {enrichmentStatus && enrichmentStatus.status !== 'idle' && (
+                    <div
+                      className={`message ${enrichmentStatus.status === 'error' ? 'error' : 'info'}`}
+                      role={enrichmentStatus.status === 'error' ? 'alert' : 'status'}
+                      aria-live={enrichmentStatus.status === 'error' ? 'assertive' : 'polite'}
+                      style={{ marginBottom: '1rem' }}
+                    >
+                      <strong>
+                        {enrichmentStatus.status === 'error' ? 'Scopus search failed' :
+                          enrichmentStatus.status === 'completed' ? 'Scopus search completed' :
+                            enrichmentStatus.status === 'pending' ? 'Scopus search queued' : 'Searching Scopus references'}
+                      </strong>
+                      <p style={{ margin: '0.5rem 0' }}>{enrichmentMessage}</p>
+                      {(enrichmentStatus.status === 'running' || enrichmentStatus.status === 'pending') && (
+                        <progress
+                          aria-label="Scopus reference search progress"
+                          max={enrichmentStatus.total || 1}
+                          value={enrichmentStatus.total ? enrichmentStatus.processed ?? 0 : undefined}
+                          style={{ width: '100%', height: '1rem', accentColor: 'var(--accent)' }}
+                        />
+                      )}
+                      {enrichmentStatus.total !== undefined && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginTop: '0.5rem' }}>
+                          <span>Papers processed: {enrichmentStatus.processed ?? 0} / {enrichmentStatus.total}</span>
+                          <span>References found: {enrichmentStatus.references_found ?? 0}</span>
+                          <span>Failed papers: {enrichmentStatus.failed ?? 0}</span>
+                          {enrichmentStatus.total > 0 && <span>{Math.round(100 * (enrichmentStatus.processed ?? 0) / enrichmentStatus.total)}%</span>}
+                        </div>
+                      )}
+                      {enrichmentStatus.status === 'running' && enrichmentStatus.current_eid && (
+                        <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem' }}>Fetching: {enrichmentStatus.current_eid}</p>
+                      )}
+                      {!!enrichmentStatus.errors?.length && (
+                        <div style={{ marginTop: '0.75rem' }}>
+                          <strong>Recent errors (up to 10)</strong>
+                          <ul style={{ margin: '0.5rem 0', paddingLeft: '1.25rem' }}>
+                            {enrichmentStatus.errors.map((error, index) => (
+                              <li key={`${error.eid}-${index}`}>{error.eid}: {error.message}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="pill-row">
                     <StatPill
                       label="Local links"
@@ -3531,7 +3637,10 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                     </summary>
                     <div className="info-content" style={{ marginTop: "0.5rem" }}>
                       <CitationMatrix
-                        usecase={currentUsecase}
+                        usecase={csvResult.job_id || currentUsecase || ''}
+                        jobId={csvResult.job_id}
+                        jobDirectory={csvResult.job_directory || undefined}
+                        refreshKey={citationRevision}
                         forcedTopN={chordTopN}
                         onCommunityClick={handleCommunityClick}
                       />
@@ -4452,6 +4561,9 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
           }}>
             <div className="card" style={{ padding: '2rem', maxWidth: '550px', width: '90%', backgroundColor: 'var(--bg-card)' }}>
               <h3 style={{ marginTop: 0 }}>Enter Scopus API Key</h3>
+              {enrichmentStatus?.status === 'error' && (
+                <div className="message error" role="alert">{enrichmentMessage}</div>
+              )}
               <p style={{ marginBottom: "1rem", color: 'var(--text-soft)', fontSize: '0.9rem' }}>
                 To fetch EIDs and enhance citation references, the server needs a valid Scopus API Key.
               </p>

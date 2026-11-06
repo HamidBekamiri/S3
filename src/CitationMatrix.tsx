@@ -14,11 +14,13 @@ interface CitationConfusionMatrix {
 interface Props {
     usecase: string;
     jobId?: string; // Optional, for context
+    jobDirectory?: string;
+    refreshKey?: number;
     forcedTopN?: number; // Optional, to sync with external slider
     onCommunityClick?: (communityId: number) => void;
 }
 
-const CitationMatrix: React.FC<Props> = ({ usecase, jobId, forcedTopN, onCommunityClick }) => {
+const CitationMatrix: React.FC<Props> = ({ usecase, jobId, jobDirectory, refreshKey, forcedTopN, onCommunityClick }) => {
     const [localTopN, setLocalTopN] = useState<number>(10);
     const topN = forcedTopN !== undefined ? forcedTopN : localTopN;
 
@@ -29,6 +31,7 @@ const CitationMatrix: React.FC<Props> = ({ usecase, jobId, forcedTopN, onCommuni
 
     useEffect(() => {
         if (!usecase) return;
+        let cancelled = false;
 
         const loadData = async () => {
             setLoading(true);
@@ -39,8 +42,8 @@ const CitationMatrix: React.FC<Props> = ({ usecase, jobId, forcedTopN, onCommuni
                 if (jobId === "usecase_mergers_acquisition") effectiveUsecase = "mergers_acquisition";
 
                 console.log(`[CitationMatrix] Fetching with topN=${topN} for usecase=${effectiveUsecase}`);
-                const result = await fetchCitationMatrix(effectiveUsecase, topN);
-                if (result) {
+                const result = await fetchCitationMatrix(effectiveUsecase, topN, jobDirectory);
+                if (!cancelled && result) {
                     console.log(`[CitationMatrix] Received ${result.ids.length} communities`);
                     setData({
                         community_ids: result.ids.map(id => parseInt(id)),
@@ -51,14 +54,15 @@ const CitationMatrix: React.FC<Props> = ({ usecase, jobId, forcedTopN, onCommuni
                 }
             } catch (err: any) {
                 console.error("Failed to fetch citation matrix:", err);
-                setError(err.message || "Failed to load matrix");
+                if (!cancelled) setError(err.message || "Failed to load matrix");
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         };
 
         loadData();
-    }, [usecase, jobId, topN]);
+        return () => { cancelled = true; };
+    }, [usecase, jobId, jobDirectory, refreshKey, topN]);
 
     // Compute display data
     const displayData = useMemo(() => {
@@ -420,7 +424,7 @@ const CitationMatrix: React.FC<Props> = ({ usecase, jobId, forcedTopN, onCommuni
             <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#666' }}>
                 * Rows: Citing (source) community; Columns: Cited (target) community.
                 <br />
-                * Data computed from explicit references (df_ref_all) for maximum accuracy.
+                * Data computed from available local citation edges and downloaded Scopus references.
             </div>
 
 

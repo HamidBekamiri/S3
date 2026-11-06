@@ -57,6 +57,12 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
+    # Revalidate the HTML so a deployment loads its new hashed JS bundle.
+    location = /index.html {
+        add_header Cache-Control "no-cache, must-revalidate" always;
+        try_files $uri =404;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }

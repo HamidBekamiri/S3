@@ -798,12 +798,28 @@ export const cleanInterdisciplinaryData = async (
 };
 
 
-export async function enhanceCitations(jobId: string, apiKey?: string, instToken?: string): Promise<{ message: string }> {
-  return apiPost<{ message: string }>(`/enhance-citations/${jobId}`, { api_key: apiKey, inst_token: instToken });
+export interface EnrichmentStatus {
+  status: 'idle' | 'pending' | 'running' | 'completed' | 'error';
+  file_exists: boolean;
+  message?: string;
+  processed?: number;
+  total?: number;
+  references_found?: number;
+  failed?: number;
+  succeeded?: number;
+  current_eid?: string;
+  errors?: { eid: string; message: string }[];
 }
 
-export async function getEnhanceStatus(jobId: string): Promise<{ status: string; file_exists: boolean }> {
-  return apiGet<{ status: string; file_exists: boolean }>(`/enhance-citations/${jobId}/status`);
+export async function enhanceCitations(jobId: string, apiKey?: string, instToken?: string, jobDirectory?: string): Promise<{ message: string }> {
+  return apiPost<{ message: string }>(`/enhance-citations/${jobId}`, {
+    api_key: apiKey, inst_token: instToken, job_directory: jobDirectory,
+  });
+}
+
+export async function getEnhanceStatus(jobId: string, jobDirectory?: string): Promise<EnrichmentStatus> {
+  const query = jobDirectory ? `?job_directory=${encodeURIComponent(jobDirectory)}` : '';
+  return apiGet<EnrichmentStatus>(`/enhance-citations/${jobId}/status${query}`);
 }
 
 export async function getInterdisciplinaryAnalysis(jobId: string): Promise<InterdisciplinaryAnalysis> {
@@ -827,6 +843,8 @@ export async function loadCOOUsecase(): Promise<CsvAnalysisResult> {
 }
 
 export interface CitationMatrixResponse {
+  metrics: CommunityCitationMetric[];
+  total_field_local_edges: number;
   ids: string[];
   matrix: number[][];
   labels?: string[];
@@ -837,8 +855,8 @@ export interface CitationMatrixResponse {
   max_val: number;
 }
 
-export async function fetchCitationMatrix(usecase: string, top_n: number): Promise<CitationMatrixResponse> {
-  return apiPost<CitationMatrixResponse>("/citation_matrix", { usecase, top_n });
+export async function fetchCitationMatrix(usecase: string, top_n: number, jobDirectory?: string): Promise<CitationMatrixResponse> {
+  return apiPost<CitationMatrixResponse>("/citation_matrix", { usecase, top_n, job_directory: jobDirectory });
 }
 
 export async function fetchReferenceReport(filename: string): Promise<{ content: string }> {
