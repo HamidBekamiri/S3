@@ -18,6 +18,7 @@ import {
   generateTopicLabels,
   cleanInterdisciplinaryData,
   enhanceCitations,
+  downloadScopusReferences,
   getEnhanceStatus,
   fetchCitationMatrix,
   type EnrichmentStatus,
@@ -2368,6 +2369,8 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [enrichmentMessage, setEnrichmentMessage] = useState("");
   const [enrichmentStatus, setEnrichmentStatus] = useState<EnrichmentStatus | null>(null);
+  const [isDownloadingReferences, setIsDownloadingReferences] = useState(false);
+  const [downloadReferencesError, setDownloadReferencesError] = useState("");
   const [enrichmentRun, setEnrichmentRun] = useState(0);
   const [citationRevision, setCitationRevision] = useState(0);
   const [isPdfManagerOpen, setIsPdfManagerOpen] = useState(false);
@@ -2816,6 +2819,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     setEnrichmentMessage("");
+    setDownloadReferencesError("");
     setEnrichmentStatus(null);
     setIsEnhancing(false);
     const checkStatus = async () => {
@@ -2856,6 +2860,19 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [csvResult?.job_id, csvResult?.job_directory, enrichmentRun, numCitationAnalysis]);
 
+  const handleDownloadReferences = async () => {
+    if (!csvResult?.job_id || isDownloadingReferences) return;
+    setIsDownloadingReferences(true);
+    setDownloadReferencesError("");
+    try {
+      await downloadScopusReferences(csvResult.job_id, csvResult.job_directory || undefined);
+    } catch (error: any) {
+      setDownloadReferencesError(`Could not download references: ${error.message}`);
+    } finally {
+      setIsDownloadingReferences(false);
+    }
+  };
+
   const handleEnhanceCitations = async () => {
     if (!csvResult?.job_id || isEnhancing) return;
     if (!scopusKey.trim()) {
@@ -2865,6 +2882,7 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
     setIsEnhancing(true);
     setEnrichmentStatus({ status: 'pending', file_exists: false });
     setEnrichmentMessage("Starting Scopus reference search…");
+    setDownloadReferencesError("");
     try {
       await enhanceCitations(csvResult.job_id, scopusKey.trim(), instToken.trim(), csvResult.job_directory || undefined);
       setShowScopusKeyModal(false);
@@ -3590,6 +3608,14 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                             enrichmentStatus.status === 'pending' ? 'Scopus search queued' : 'Searching Scopus references'}
                       </strong>
                       <p style={{ margin: '0.5rem 0' }}>{enrichmentMessage}</p>
+                      {enrichmentStatus.status === 'completed' && enrichmentStatus.file_exists && (
+                        <div style={{ margin: '0.75rem 0' }}>
+                          <button className="secondary-button" onClick={handleDownloadReferences} disabled={isDownloadingReferences}>
+                            {isDownloadingReferences ? 'Downloading…' : 'Download references CSV'}
+                          </button>
+                          {downloadReferencesError && <p className="message error" role="alert">{downloadReferencesError}</p>}
+                        </div>
+                      )}
                       {(enrichmentStatus.status === 'running' || enrichmentStatus.status === 'pending') && (
                         <progress
                           aria-label="Scopus reference search progress"

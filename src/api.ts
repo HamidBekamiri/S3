@@ -822,6 +822,25 @@ export async function getEnhanceStatus(jobId: string, jobDirectory?: string): Pr
   return apiGet<EnrichmentStatus>(`/enhance-citations/${jobId}/status${query}`);
 }
 
+export async function downloadScopusReferences(jobId: string, jobDirectory?: string): Promise<void> {
+  const directory = encodeURIComponent(jobDirectory || jobId);
+  const response = await fetch(`${API_BASE}/download/${directory}/scopus_references.csv`, {
+    headers: withAuthHeaders(),
+  });
+  if (!response.ok) await handleResponse<never>(response);
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'scopus_references.csv';
+  document.body.appendChild(link);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+}
+
 export async function getInterdisciplinaryAnalysis(jobId: string): Promise<InterdisciplinaryAnalysis> {
   return apiGet<InterdisciplinaryAnalysis>(`/analyze/interdisciplinary/${jobId}`);
 }
