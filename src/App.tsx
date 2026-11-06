@@ -2981,7 +2981,8 @@ const MainContent: React.FC<{ googleAuthEnabled: boolean }> = ({ googleAuthEnabl
                 <button
                   className="secondary-button"
                   onClick={handleLoadInnovation}
-                  disabled={isUploadingCsv}
+                  disabled
+                  title="Temporarily disabled"
                 >
                   ✨ Load "Innovation & Diversity" Usecase
                 </button>
